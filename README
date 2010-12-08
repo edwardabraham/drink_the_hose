@@ -5,3 +5,8 @@ $ python drink_the_hose.py -u your_name
 
 To print the text of tweets that contain a smiley face:
 $ python drink_the_hose.py -u your_name ":-)"
+
+This is a simple beginning of an explore of tweepy
+https://github.com/joshthecoder/tweepy
+You will need to install tweepy to get this to work.
+
