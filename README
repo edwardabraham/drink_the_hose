@@ -1,0 +1,7 @@
+Script to display information from the twitter stream
+
+To print the text of tweets from the twitter garden hose:
+$ python drink_the_hose.py -u your_name
+
+To print the text of tweets that contain a smiley face:
+$ python drink_the_hose.py -u your_name ":-)"
