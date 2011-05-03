@@ -16,70 +16,30 @@ $ python drink_the_hose.py --help
 """
 from optparse import OptionParser
 from getpass import getpass
-
-import httplib
-from socket import timeout
-from threading import Thread
+from collections import deque
+import time
 from time import sleep
-import urllib
+import logging
 
 import tweepy
 from tweepy.models import Status
 from tweepy.utils import import_simplejson
+from tweepy.api import API
 json = import_simplejson()
+api = API()
 
-class NoisyStream(tweepy.Stream):
-    def _run(self):
-        # setup
-        self.auth.apply_auth(None, None, self.headers, None)
-
-        # enter loop
-        error_counter = 0
-        conn = None
-        while self.running:
-            if self.retry_count and error_counter > self.retry_count:
-                # quit if error count greater than retry count
-                break
-            try:
-                conn = httplib.HTTPConnection(self.host)
-                conn.connect()
-                conn.sock.settimeout(self.timeout)
-                conn.request('POST', self.url, self.body, headers=self.headers)
-                resp = conn.getresponse()
-                if resp.status != 200:
-                    if self.listener.on_error(resp.status) is False:
-                        break
-                    error_counter += 1
-                    sleep(self.retry_time)
-                else:
-                    error_counter = 0
-                    self._read_loop(resp)
-            except timeout:
-                if self.listener.on_timeout() == False:
-                    break
-                if self.running is False:
-                    break
-                conn.close()
-                sleep(self.snooze_time)
-            except Exception:
-                # any other exception is fatal, so kill loop
-                raise
-                break
-
-        # cleanup
-        self.running = False
-        if conn:
-            conn.close()
-
+BACKOFF = 0.5 #Initial wait time before attempting to reconnect
+MAX_BACKOFF = 300 #Maximum wait time between connection attempts
+UNICODE_LINES = (u'\u000a', u'\u000b', u'\u000c', u'\u000d', u'\u0085', u'\u2028', u'\u2029')
+logging.basicConfig(level=logging.INFO)
 
 class EchoListener(tweepy.StreamListener):
     def __init__(self, *args, **kwargs):
         try:
-            self.count = 0
-            self.limit = kwargs['limit']
-            del kwargs['limit']
+            self.queue = deque(maxlen = kwargs['maxlen'])
+            del kwargs['maxlen']
         except KeyError:
-            self.limit = 0
+            self.queue = deque(maxlen = 1000)
         super(EchoListener, self).__init__(*args, **kwargs)
 
     def on_data(self, data):
@@ -88,40 +48,99 @@ class EchoListener(tweepy.StreamListener):
         Override this method if you wish to manually handle
         the stream data. Return False to stop stream and close connection.
         """
-        if 'in_reply_to_status_id' in data:
-            status = Status.parse(self.api, json.loads(data))
-            #status = data
-            if self.on_status(status) is False:
-                return False
+        if 'in_reply_to_status_id' in data: 
+            self.queue.append(data)
+            logging.debug("Append data (%s)"%(len(self.queue)))
+            return True
+
         elif 'delete' in data:
+            logging.debug('Delete received')
             delete = json.loads(data)['delete']['status']
             if self.on_delete(delete['id'], delete['user_id']) is False:
                 return False
         elif 'limit' in data:
+            logging.info('Limit received')
             if self.on_limit(json.loads(data)['limit']['track']) is False:
                 return False
 
-    def on_status(self, status):
-        print '-'*10
-        print "%s (%s): %s"%(status.user.name, status.user.lang, status.text)
-        self.count += 1
-        if self.limit and (self.count > self.limit):
-            return False
-        return True
+    def connect(self, username, password, stringlist=[], async=True):
+        self.stream = tweepy.Stream(username, password, self)
+        try:
+            if stringlist:
+                self.stream.filter(track = stringlist, async=async)
+            else:
+                self.stream.sample(async=async)
+            logging.debug('Connected to twitter')
+        except:
+            self.stream.disconnect()
+            logging.debug('Something went wrong - disconnected from twitter')
 
-def drink(username, password, stringlist=[], limit=0):
-    listener = EchoListener(limit=limit)
-    stream = NoisyStream(username, password, listener)
-    print 'streaming'
+    def running(self):
+        return self.stream.running
+
+    def disconnect(self):
+        return self.stream.disconnect()
+
+class AbstractConsumer(object):
+    """Consumes tweets"""
+    def process(self, tweet):
+       raise NotImplementedError
+
+class Lineprinter(AbstractConsumer):
+    def process(self, tweet):
+        status = Status.parse(api, json.loads(tweet))
+        for lf in UNICODE_LINES:
+            text = status.text.replace(lf, ' ')
+        print "@%s (%s, %s, %s, %s): %s"%(status.user.screen_name, 
+            status.user.lang, status.user.statuses_count, status.user.friends_count, 
+            status.user.followers_count, text)
+
+class Rawprinter(AbstractConsumer):
+    def process(self, tweet):
+        print tweet
+
+def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Rawprinter()]):
+    listener = EchoListener(maxlen=maxlen)
+    listener.connect(username, password, stringlist=stringlist)
+    count = 0
+    backoff = BACKOFF
+    backoff_warning = False
+    #Consume tweets until the queue is empty, and then wait
     try:
-        if stringlist:
-            stream.filter(track = stringlist, async=True)
-        else:
-            print 'sample'
-            stream.sample(async=True)
-    except:
-        raise
-        stream.disconnect()
+        while True:
+            if listener.running and (not limit or count < limit):
+                    logging.debug('Try and get a tweet from the queue ...')
+                    try:
+                        tweet = listener.queue.popleft()
+                        count += 1
+                        logging.debug('... pulled tweet %s from the queue (%s)'%(count, len(listener.queue)))
+                        for consumer in consumers:
+                            try:
+                                consumer.process(str(tweet))
+                            except:
+                                logging.warn("Something went wrong with the consumer %s on the tweet %s"%(consumer, tweet))
+                    except IndexError:
+                        logging.debug('... queue empty, wait a while')
+                        time.sleep(1)
+            elif not limit or count < limit:
+                try:
+                    logging.debug("Wait %i s before reconnecting"%(backoff,))
+                    time.sleep(backoff)
+                    listener = EchoListener(maxlen=maxlen)
+                    listener.connect(username, password, stringlist=stringlist)
+                    if listener.running:
+                        backoff = BACKOFF
+                        backoff_warning = False
+                finally:
+                    backoff = min(MAX_BACKOFF, backoff*2)
+                    if backoff == MAX_BACKOFF and not backoff_warning:
+                        logging.warn('Having trouble connecting to twitter')
+                        backoff_warning = True
+            elif count >= limit:
+                logging.debug('Limit reached')
+                break
+    finally:
+        listener.disconnect()
 
 if __name__ == "__main__":
     parser = OptionParser()
