@@ -99,7 +99,7 @@ class Rawprinter(AbstractConsumer):
     def process(self, tweet):
         print tweet
 
-def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Rawprinter()]):
+def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Lineprinter()]):
     listener = EchoListener(maxlen=maxlen)
     listener.connect(username, password, stringlist=stringlist)
     count = 0
