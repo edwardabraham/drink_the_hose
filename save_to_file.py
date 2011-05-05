@@ -13,6 +13,9 @@ if __name__ == "__main__":
         options.username = raw_input()
     if options.password is None:
         options.password = getpass()
-    
-    os.makedirs('stash')
+   
+    try:
+        os.makedirs('stash')
+    except OSError:
+        pass
     drink(username=options.username, password=options.password, stringlist=args, consumers=[Timedfilewriter(path='stash'), Counter()])
