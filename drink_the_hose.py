@@ -111,11 +111,11 @@ class Counter(AbstractConsumer):
 
 class Timedfilewriter(AbstractConsumer):
     def __init__(self, path='.',  base='drink-the-hose', fmt='%Y%m%d%H'):
-        self.path = base
+        self.base = base
         self.path = path
         self.fmt = fmt
         self.time = time.strftime(self.fmt)
-        self.fid = gzip.open(os.path.join(self.path, self.base + '-' + self.time + '.txt.gz', 'ab'))
+        self.fid = gzip.open(os.path.join(self.path, self.base + '-' + self.time + '.txt.gz'), 'ab')
         self.warn_count = 0
 
     def process(self, tweet):
@@ -133,9 +133,9 @@ class Timedfilewriter(AbstractConsumer):
             "timezone":status.user.time_zone}
         now = time.strftime(self.fmt)
         if now != self.time:
-            self.time = now
+            self.time = str(now)
             self.fid.close()
-            self.fid = gzip.open(self.path + '-' + self.time + '.txt.gz', 'ab')
+            self.fid = gzip.open(os.path.join(self.path, self.base + '-' + self.time + '.txt.gz'), 'ab')
         self.fid.write(json.dumps(out) + '\n')
 
 def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Lineprinter()]):

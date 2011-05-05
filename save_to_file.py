@@ -1,3 +1,4 @@
+import os
 from optparse import OptionParser
 from getpass import getpass
 from drink_the_hose import drink, Counter, Timedfilewriter
@@ -12,5 +13,6 @@ if __name__ == "__main__":
         options.username = raw_input()
     if options.password is None:
         options.password = getpass()
-        
-    drink(username=options.username, password=options.password, stringlist=args, consumers=[Timedfilewriter(), Counter()])
+    
+    os.makedirs('stash')
+    drink(username=options.username, password=options.password, stringlist=args, consumers=[Timedfilewriter(path='stash'), Counter()])
