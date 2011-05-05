@@ -18,10 +18,10 @@ from optparse import OptionParser
 from getpass import getpass
 from collections import deque
 import time
-from time import sleep
 import logging
 import gzip
 import sys
+import os
 
 import tweepy
 from tweepy.models import Status
@@ -110,25 +110,27 @@ class Counter(AbstractConsumer):
         sys.stdout.write('%s\r'%self.count)
 
 class Timedfilewriter(AbstractConsumer):
-    def __init__(self, path='drink-the-hose', fmt='%Y%m%d%H'):
-        self.path = 'drink-the-hose'
+    def __init__(self, path='.',  base='drink-the-hose', fmt='%Y%m%d%H'):
+        self.path = base
+        self.path = path
         self.fmt = fmt
         self.time = time.strftime(self.fmt)
-        self.fid = gzip.open(path + '-' + self.time + '.txt.gz', 'ab')
+        self.fid = gzip.open(os.path.join(self.path, self.base + '-' + self.time + '.txt.gz', 'ab'))
+        self.warn_count = 0
 
     def process(self, tweet):
         status = Status.parse(api, json.loads(tweet))
         out = {"screen_name": status.user.screen_name, 
-             "lang": status.user.lang, 
-             "statuses_count": status.user.statuses_count, 
-             "friend_count": status.user.friends_count, 
-             "followers_count":status.user.followers_count,
-             "text": status.text.encode('utf8'),
-             "entities": status.entities,
-             "timestamp": time.strftime("%Y%m%d%H%M%S", time.gmtime()),
-             "geo":status.geo,
-             "location":status.user.location,
-             "timezone":status.user.time_zone}
+            "lang": status.user.lang, 
+            "statuses_count": status.user.statuses_count, 
+            "friend_count": status.user.friends_count, 
+            "followers_count":status.user.followers_count,
+            "text": status.text.encode('utf8'),
+            "entities": status.entities,
+            "timestamp": time.strftime("%Y%m%d%H%M%S", time.gmtime()),
+            "geo":status.geo,
+            "location":status.user.location,
+            "timezone":status.user.time_zone}
         now = time.strftime(self.fmt)
         if now != self.time:
             self.time = now
@@ -142,6 +144,7 @@ def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Li
     count = 0
     backoff = BACKOFF
     backoff_warning = False
+    warn_count = 0
     #Consume tweets until the queue is empty, and then wait
     try:
         while True:
@@ -155,8 +158,10 @@ def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Li
                             try:
                                 consumer.process(str(tweet))
                             except:
-                                logging.warn("Something went wrong with the consumer %s on the tweet %s"%(consumer, tweet))
-                                raise
+                                if warn_count > 100:
+                                    logging.warn("Something went wrong with the consumer %s on the tweet %s"%(consumer, tweet))
+                                else:
+                                    warn_count += 1
                     except IndexError:
                         logging.debug('... queue empty, wait a while')
                         time.sleep(1)
