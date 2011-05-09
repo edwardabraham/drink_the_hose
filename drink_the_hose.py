@@ -121,13 +121,15 @@ class Timedfilewriter(AbstractConsumer):
     def process(self, tweet):
         status = Status.parse(api, json.loads(tweet))
         out = {"screen_name": status.user.screen_name, 
+            "id": status.id,
             "lang": status.user.lang, 
             "statuses_count": status.user.statuses_count, 
             "friend_count": status.user.friends_count, 
             "followers_count":status.user.followers_count,
+            "profile_image_url": status.user.profile_image_url,
             "text": status.text.encode('utf8'),
             "entities": status.entities,
-            "timestamp": time.strftime("%Y%m%d%H%M%S", time.gmtime()),
+            "created_at": status.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             "geo":status.geo,
             "location":status.user.location,
             "timezone":status.user.time_zone}
@@ -158,10 +160,11 @@ def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Li
                             try:
                                 consumer.process(str(tweet))
                             except:
-                                if warn_count > 100:
+                                if warn_count < 100:
                                     logging.warn("Something went wrong with the consumer %s on the tweet %s"%(consumer, tweet))
-                                else:
                                     warn_count += 1
+                                else:
+                                    raise
                     except IndexError:
                         logging.debug('... queue empty, wait a while')
                         time.sleep(1)
