@@ -27,8 +27,12 @@ import tweepy
 from tweepy.models import Status
 from tweepy.utils import import_simplejson
 from tweepy.api import API
+from tweepy import OAuthHandler
+
 json = import_simplejson()
 api = API()
+
+from secrets import consumer_key, consumer_secret, access_token, access_token_secret
 
 BACKOFF = 0.5 #Initial wait time before attempting to reconnect
 MAX_BACKOFF = 300 #Maximum wait time between connection attempts
@@ -65,8 +69,10 @@ class EchoListener(tweepy.StreamListener):
             if self.on_limit(json.loads(data)['limit']['track']) is False:
                 return False
 
-    def connect(self, username, password, stringlist=[], async=True):
-        self.stream = tweepy.Stream(username, password, self)
+    def connect(self, stringlist=[], async=True):
+        auth = OAuthHandler(consumer_key, consumer_secret)
+        auth.set_access_token(access_token, access_token_secret)
+        self.stream = tweepy.Stream(auth, self)
         try:
             if stringlist:
                 self.stream.filter(track = stringlist, async=async)
@@ -140,9 +146,9 @@ class Timedfilewriter(AbstractConsumer):
             self.fid = gzip.open(os.path.join(self.path, self.base + '-' + self.time + '.txt.gz'), 'ab')
         self.fid.write(json.dumps(out) + '\n')
 
-def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Lineprinter()]):
+def drink(limit=0, stringlist=[], maxlen=1000, consumers=[Lineprinter()]):
     listener = EchoListener(maxlen=maxlen)
-    listener.connect(username, password, stringlist=stringlist)
+    listener.connect(stringlist=stringlist)
     count = 0
     backoff = BACKOFF
     backoff_warning = False
@@ -173,7 +179,7 @@ def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Li
                     logging.debug("Wait %i s before reconnecting"%(backoff,))
                     time.sleep(backoff)
                     listener = EchoListener(maxlen=maxlen)
-                    listener.connect(username, password, stringlist=stringlist)
+                    listener.connect(stringlist=stringlist)
                     if listener.running:
                         backoff = BACKOFF
                         backoff_warning = False
@@ -190,15 +196,18 @@ def drink(username, password, stringlist=[], limit=0, maxlen=1000, consumers=[Li
 
 if __name__ == "__main__":
     parser = OptionParser()
-    parser.add_option("-u", "--username", dest="username", help= "Twitter username", default=None)
-    parser.add_option("-p", "--password", dest="password", help= "Twitter password", default=None)
     parser.add_option("-l", "--limit", dest="limit", help= "Number of status updates to harvest", default=0, type='int')
+    parser.add_option("-p", "--path", dest="path", help= "Directory", default='')
 
     (options, args) = parser.parse_args()
-    if options.username is None:
-        options.username = raw_input()
-    if options.password is None:
-        options.password = getpass()
-        
-    drink(username=options.username, password=options.password, limit=options.limit, stringlist=args)
+
+    if options.path:    
+        try:
+            os.makedirs(options.path)
+        except OSError:
+            pass
+        consumers=[Timedfilewriter(path=options.path), Counter()]
+    else:
+        consumers=[Lineprinter()]
+    drink(limit=options.limit, stringlist=args, consumers=consumers)
 

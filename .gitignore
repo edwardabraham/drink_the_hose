@@ -2,3 +2,5 @@
 *.swp
 *~
 stash/*
+secrets.py
+*.gz
