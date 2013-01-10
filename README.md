@@ -8,7 +8,7 @@ the twitter streaming API.
 1. Install tweepy `sudo pip install tweepy`
 2. Grab this code `git clone git://github.com/edwardabraham/drink_the_hose.git`
 3. Make a file `secrets.py` in the drink_the_hose directory that has your twitter access credentials in
-  it. This file should contain the following string variables: consumer_key, consumer_secret, access_token, access_token_secret. 
+  it. This file should contain the following string variables: `consumer_key`, `consumer_secret`, `access_token`, `access_token_secret`. 
   To get these keys, you need to create a [twitter app](https://dev.twitter.com/apps).
 
 ## Usage
